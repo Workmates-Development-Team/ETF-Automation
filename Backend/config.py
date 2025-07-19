@@ -11,7 +11,7 @@ ACCESS_TOKEN = os.environ.get("ACCESS_TOKEN")
 DB_URL = os.environ.get("DB_URL")
 
 if not CLIENT_ID or not ACCESS_TOKEN or not DB_URL:
-    raise RuntimeError("CLIENT_ID, ACCESS_TOKEN, and DB_URL must be set in the environment or .env file")
+    raise RuntimeError("CLIENT_I, ACCESS_TOKEN, and DB_URL must be set in the environment or .env file")
 
 # Set up IST timezone
 IST = timezone(timedelta(hours=5, minutes=30))
