@@ -1,0 +1,15 @@
+Flask
+Flask-Cors
+Flask-SocketIO
+requests
+numpy
+python-socketio
+pandas
+SQLAlchemy
+gspread
+oauth2client
+schedule
+dhanhq
+psycopg2-binary
+eventlet
+python-dotenv
