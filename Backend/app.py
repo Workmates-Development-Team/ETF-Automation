@@ -37,10 +37,6 @@ def run_scheduler():
         schedule.run_pending()
         time.sleep(1)
 
-#  Start the scheduler in a separate thread
-# scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
-# scheduler_thread.start()
-
 def reload_pending_schedules():
     """
     Reloads all pending schedules from the database and registers them with the scheduler.
@@ -51,13 +47,12 @@ def reload_pending_schedules():
         logger.info("🔄 Reloading pending schedules from database on server startup")
         now = datetime.now(IST)
         
-        # Query all pending schedules
         pending_schedules = (
             session.query(InvestmentSchedule)
             .join(InvestmentCycle, InvestmentSchedule.cycle_id == InvestmentCycle.cycle_id)
             .filter(
                 InvestmentSchedule.status == "pending",
-                InvestmentCycle.status == "active"  # Only load schedules for active cycles
+                InvestmentCycle.status == "active"
             )
             .all()
         )
@@ -75,20 +70,17 @@ def reload_pending_schedules():
                 logger.error(f"⚠️ Could not fetch security details for ETF '{etf.etf_name}' for schedule_id={schedule_item.schedule_id}")
                 continue
 
-            # Combine execution date and time
             execution_datetime = datetime.combine(
                 schedule_item.execution_date,
                 schedule_item.execution_time
             ).replace(tzinfo=IST)
 
-            # Mark schedules that are in the past as expired
             if execution_datetime <= now:
                 schedule_item.status = "expired"
                 session.commit()
                 logger.info(f"⏭️ Marked schedule_id={schedule_item.schedule_id} as expired (execution_datetime={execution_datetime})")
                 continue
 
-            # Schedule the trade
             time_str = execution_datetime.strftime("%H:%M")
             target_date = schedule_item.execution_date
 
@@ -105,7 +97,6 @@ def reload_pending_schedules():
                 logger.info(f"🚀 Executing scheduled trade for schedule_id={schedule_id}")
                 execute_weekly_trade(schedule_id, security_id, amount, etf_name)
 
-            # Register the job with the scheduler
             job_tag = f"trade_{schedule_item.cycle_id}_{schedule_item.week_number - 1}"
             schedule.every().day.at(time_str).do(scheduled_trade).tag(job_tag)
             logger.info(
@@ -120,8 +111,6 @@ def reload_pending_schedules():
         logger.error(f"❌ Error reloading pending schedules: {e}", exc_info=True)
     finally:
         session.close()
- 
-   
 
 @app.errorhandler(400)
 def bad_request_error(error):
@@ -334,6 +323,7 @@ def get_etf_details(etf_name):
                     "execution_date": s.execution_date.isoformat(),
                     "execution_time": s.execution_time.strftime("%H:%M:%S"),
                     "amount": float(s.amount),
+                    "quantity": int(s.quantity),  # Include quantity
                     "status": s.status,
                     "created_at": s.created_at.isoformat(),
                     "updated_at": s.updated_at.isoformat()
@@ -408,7 +398,7 @@ def get_etf_details(etf_name):
             "etf": {
                 "etf_id": etf.etf_id,
                 "etf_name": etf.etf_name,
-                "full_name": symbol_name,  # Added full name
+                "full_name": symbol_name,
                 "description": etf.description,
                 "created_at": etf.created_at.isoformat(),
                 "investment_cycles": cycle_list,
@@ -437,6 +427,7 @@ def get_etf_details(etf_name):
         return jsonify({"status": "error", "message": f"Internal server error: {str(e)}"}), 500
     finally:
         session.close()
+
 @app.route("/api/schedule_etf", methods=["POST"])
 def api_schedule_etf():
     session = Session()
@@ -531,9 +522,6 @@ def api_schedule_etf():
     finally:
         session.close()
 
-
-from datetime import datetime
-
 @app.route("/api/all_etf_details", methods=["GET"])
 def get_all_etf_details():
     session = Session()
@@ -541,7 +529,7 @@ def get_all_etf_details():
         etfs = session.query(ETF).all()
 
         response = dhan.get_holdings()
-        logger.info(f"[Dhan Holdings API Response] => {response}")  # ✅ Log full response
+        logger.info(f"[Dhan Holdings API Response] => {response}")
 
         holdings = response.get("data", []) if response and response.get("status") == "success" else []
 
@@ -560,7 +548,6 @@ def get_all_etf_details():
             current_value = 0.0
             weeks = []
 
-            # Match holding with security_id
             holding_details = next((h for h in holdings if int(h.get("securityId")) == int(security_id)), None)
             if holding_details:
                 holding_qty = int(holding_details.get("availableQty", 0))
@@ -568,7 +555,6 @@ def get_all_etf_details():
                 avg_cost_price = float(holding_details.get("avgCostPrice", 0.0))
                 current_value = holding_qty * ltp
             else:
-                # fallback to live LTP if holding not found
                 ltp = get_ltp(security_id) or 0.0
                 current_value = holding_qty * ltp
 
@@ -590,11 +576,10 @@ def get_all_etf_details():
                         "amount": float(s.amount),
                         "date": s.execution_date.strftime("%d/%m/%Y"),
                         "ltp": round(ltp, 2),
-                        "qty": 0,
+                        "qty": int(s.quantity),  # Use stored quantity
                         "status": s.status
                     })
 
-            # ✅ Calculate profit percentage
             profit_percent = ((current_value - total_invested) / total_invested * 100) if total_invested > 0 else 0.0
 
             strategy = {
@@ -622,7 +607,6 @@ def get_all_etf_details():
         return jsonify({"status": "error", "message": f"Internal server error: {str(e)}"}), 500
     finally:
         session.close()
-
 
 if __name__ == "__main__":
     reload_pending_schedules()

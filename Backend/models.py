@@ -34,6 +34,7 @@ class InvestmentSchedule(Base):
     execution_date = Column(Date, nullable=False)
     execution_time = Column(Time, default='15:00:00', nullable=False)
     amount = Column(Float(15, 2), nullable=False)
+    quantity = Column(Integer, default=0)  # New column to store executed quantity
     status = Column(String(20), nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.now(IST))
     updated_at = Column(DateTime, default=lambda: datetime.now(IST))

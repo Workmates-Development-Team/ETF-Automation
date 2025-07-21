@@ -1,12 +1,9 @@
-
-
 from datetime import datetime, timedelta
 import schedule
 from config import logger, IST
 from models import Session, InvestmentSchedule, InvestmentCycle
 from utils import get_balance, get_ltp, save_execution_to_db, dhan
 from socketio_instance import socketio
-
 
 def place_cnc_market_buy_order(schedule_id, security_id, withdrawable_balance, ltp, amount, etf_name):
     try:
@@ -68,6 +65,7 @@ def place_cnc_market_buy_order(schedule_id, security_id, withdrawable_balance, l
                     'etf_name': etf_name
                 })
                 schedule.status = 'executed'
+                schedule.quantity = quantity  # Save quantity to InvestmentSchedule
                 schedule.updated_at = timestamp
                 session.commit()
                 save_execution_to_db(schedule_id, amount, ltp, quantity, timestamp, 'success')
@@ -82,9 +80,10 @@ def place_cnc_market_buy_order(schedule_id, security_id, withdrawable_balance, l
                     'etf_name': etf_name
                 })
                 schedule.status = 'failed'
+                schedule.quantity = 0  # Set quantity to 0 for failed trades
                 schedule.updated_at = timestamp
                 session.commit()
-                save_execution_to_db(schedule_id, amount, ltp, quantity, timestamp, 'failed', error_message)
+                save_execution_to_db(schedule_id, amount, ltp, 0, timestamp, 'failed', error_message)
                 return None, None, error_message
 
         except Exception as e:
@@ -107,6 +106,7 @@ def place_cnc_market_buy_order(schedule_id, security_id, withdrawable_balance, l
         try:
             schedule = session.query(InvestmentSchedule).filter_by(schedule_id=schedule_id).one()
             schedule.status = 'failed'
+            schedule.quantity = 0  # Set quantity to 0 for failed trades
             schedule.updated_at = datetime.now(IST)
             session.commit()
             save_execution_to_db(schedule_id, amount, ltp, 0, datetime.now(IST), 'failed', str(e))
@@ -116,7 +116,6 @@ def place_cnc_market_buy_order(schedule_id, security_id, withdrawable_balance, l
             session.close()
 
         return None, None, str(e)
-
 
 def execute_weekly_trade(schedule_id, security_id, amount, etf_name):
     logger.info(f"⏰ Executing scheduled trade: schedule_id={schedule_id}, security_id={security_id}, amount={amount}, etf_name={etf_name} at {datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S')}")
@@ -130,13 +129,16 @@ def execute_weekly_trade(schedule_id, security_id, amount, etf_name):
         if cycle.status != 'active':
             logger.info(f"⏭️ Skipping trade for cycle {cycle.cycle_id} (status: {cycle.status})")
             schedule.status = 'skipped'
+            schedule.quantity = 0  # Ensure quantity is 0 for skipped trades
             schedule.updated_at = datetime.now(IST)
             session.commit()
+            save_execution_to_db(schedule_id, amount, 0, 0, datetime.now(IST), 'skipped', 'Cycle not active')
             return
         available_balance, withdrawable_balance = get_balance()
         if withdrawable_balance is None:
             logger.error("❌ Failed to fetch balance for weekly trade.")
             schedule.status = 'failed'
+            schedule.quantity = 0  # Set quantity to 0 for failed trades
             schedule.updated_at = datetime.now(IST)
             session.commit()
             save_execution_to_db(schedule_id, amount, 0, 0, datetime.now(IST), 'failed', 'Failed to fetch balance')
@@ -145,6 +147,7 @@ def execute_weekly_trade(schedule_id, security_id, amount, etf_name):
         if ltp is None:
             logger.error(f"❌ Failed to fetch LTP for security ID {security_id}.")
             schedule.status = 'failed'
+            schedule.quantity = 0  # Set quantity to 0 for failed trades
             schedule.updated_at = datetime.now(IST)
             session.commit()
             save_execution_to_db(schedule_id, amount, 0, 0, datetime.now(IST), 'failed', 'Failed to fetch LTP')
@@ -153,11 +156,12 @@ def execute_weekly_trade(schedule_id, security_id, amount, etf_name):
         if quantity <= 0:
             logger.warning("Amount is less than LTP, trade will not execute until amount >= LTP.")
             schedule.status = 'failed'
+            schedule.quantity = 0  # Set quantity to 0 for failed trades
             schedule.updated_at = datetime.now(IST)
             session.commit()
             save_execution_to_db(schedule_id, amount, ltp, 0, datetime.now(IST), 'failed', 'Amount less than LTP')
             return
-        _, order_id, error_message = place_cnc_market_buy_order(schedule_id, security_id, withdrawable_balance, ltp, amount, etf_name)
+        quantity, order_id, error_message = place_cnc_market_buy_order(schedule_id, security_id, withdrawable_balance, ltp, amount, etf_name)
         if error_message:
             logger.error(f"❌ Weekly trade failed: {error_message}")
         else:
@@ -172,6 +176,7 @@ def execute_weekly_trade(schedule_id, security_id, amount, etf_name):
         try:
             schedule = session.query(InvestmentSchedule).filter_by(schedule_id=schedule_id).one()
             schedule.status = 'failed'
+            schedule.quantity = 0  # Set quantity to 0 for failed trades
             schedule.updated_at = datetime.now(IST)
             session.commit()
             save_execution_to_db(schedule_id, amount, 0, 0, datetime.now(IST), 'failed', str(e))
@@ -195,6 +200,7 @@ def schedule_weekly_trades(cycle_id, security_id, total_amount, start_datetime, 
                 execution_date=execution_datetime.date(),
                 execution_time=execution_datetime.time(),
                 amount=weekly_amount,
+                quantity=0,  # Initialize quantity to 0
                 status='pending'
             )
             session.add(schedule_entry)
