@@ -40,6 +40,164 @@ def run_scheduler():
 scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
 scheduler_thread.start()
 
+def reload_pending_schedules():
+    """
+    Reloads all pending schedules from the database and registers them with the scheduler.
+    Marks past schedules as 'expired'.
+    """
+    session = Session()
+    try:
+        logger.info("🔄 Reloading pending schedules from database on server startup")
+        now = datetime.now(IST)
+        
+        # Query all pending schedules
+        pending_schedules = (
+            session.query(InvestmentSchedule)
+            .join(InvestmentCycle, InvestmentSchedule.cycle_id == InvestmentCycle.cycle_id)
+            .filter(
+                InvestmentSchedule.status == "pending",
+                InvestmentCycle.status == "active"  # Only load schedules for active cycles
+            )
+            .all()
+        )
+
+        if not pending_schedules:
+            logger.info("ℹ️ No pending schedules found in database")
+            return
+
+        for schedule_item in pending_schedules:
+            cycle = session.query(InvestmentCycle).filter_by(cycle_id=schedule_item.cycle_id).first()
+            etf = session.query(ETF).filter_by(etf_id=cycle.etf_id).first()
+            security_id = get_security_details(etf.etf_name)
+
+            if not security_id:
+                logger.error(f"⚠️ Could not fetch security details for ETF '{etf.etf_name}' for schedule_id={schedule_item.schedule_id}")
+                continue
+
+            # Combine execution date and time
+            execution_datetime = datetime.combine(
+                schedule_item.execution_date,
+                schedule_item.execution_time
+            ).replace(tzinfo=IST)
+
+            # Mark schedules that are in the past as expired
+            if execution_datetime <= now:
+                schedule_item.status = "expired"
+                session.commit()
+                logger.info(f"⏭️ Marked schedule_id={schedule_item.schedule_id} as expired (execution_datetime={execution_datetime})")
+                continue
+
+            # Schedule the trade
+            time_str = execution_datetime.strftime("%H:%M")
+            target_date = schedule_item.execution_date
+
+            def scheduled_trade(
+                schedule_id=schedule_item.schedule_id,
+                security_id=security_id,
+                amount=schedule_item.amount,
+                etf_name=etf.etf_name,
+                target_date=target_date
+            ):
+                now = datetime.now(IST)
+                if now.date() != target_date:
+                    return
+                logger.info(f"🚀 Executing scheduled trade for schedule_id={schedule_id}")
+                execute_weekly_trade(schedule_id, security_id, amount, etf_name)
+
+            # Register the job with the scheduler
+            job_tag = f"trade_{schedule_item.cycle_id}_{schedule_item.week_number - 1}"
+            schedule.every().day.at(time_str).do(scheduled_trade).tag(job_tag)
+            logger.info(
+                f"✅ Scheduled job for schedule_id={schedule_item.schedule_id}, "
+                f"cycle_id={schedule_item.cycle_id}, week={schedule_item.week_number}, "
+                f"at {time_str} on {target_date}"
+            )
+
+        logger.info(f"✅ Successfully reloaded {len(pending_schedules)} pending schedules")
+        
+    except Exception as e:
+        logger.error(f"❌ Error reloading pending schedules: {e}", exc_info=True)
+    finally:
+        session.close()
+    """
+    Reloads all pending schedules from the database and registers them with the scheduler.
+    Marks past schedules as 'expired'.
+    """
+    session = Session()
+    try:
+        logger.info("🔄 Reloading pending schedules from database on server startup")
+        now = datetime.now(IST)
+        
+        # Query all pending schedules
+        pending_schedules = (
+            session.query(InvestmentSchedule)
+            .join(InvestmentCycle, InvestmentSchedule.cycle_id == InvestmentCycle.cycle_id)
+            .filter(
+                InvestmentSchedule.status == "pending",
+                InvestmentCycle.status == "active"  # Only load schedules for active cycles
+            )
+            .all()
+        )
+
+        if not pending_schedules:
+            logger.info("ℹ️ No pending schedules found in database")
+            return
+
+        for schedule_item in pending_schedules:
+            cycle = session.query(InvestmentCycle).filter_by(cycle_id=schedule_item.cycle_id).first()
+            etf = session.query(ETF).filter_by(etf_id=cycle.etf_id).first()
+            security_id = get_security_details(etf.etf_name)
+
+            if not security_id:
+                logger.error(f"⚠️ Could not fetch security details for ETF '{etf.etf_name}' for schedule_id={schedule_item.schedule_id}")
+                continue
+
+            # Combine execution date and time
+            execution_datetime = datetime.combine(
+                schedule_item.execution_date,
+                schedule_item.execution_time
+            ).replace(tzinfo=IST)
+
+            # Mark schedules that are in the past as expired
+            if execution_datetime <= now:
+                schedule_item.status = "expired"
+                session.commit()
+                logger.info(f"⏭️ Marked schedule_id={schedule_item.schedule_id} as expired (execution_datetime={execution_datetime})")
+                continue
+
+            # Schedule the trade
+            time_str = execution_datetime.strftime("%H:%M")
+            target_date = schedule_item.execution_date
+
+            def scheduled_trade(
+                schedule_id=schedule_item.schedule_id,
+                security_id=security_id,
+                amount=schedule_item.amount,
+                etf_name=etf.etf_name,
+                target_date=target_date
+            ):
+                now = datetime.now(IST)
+                if now.date() != target_date:
+                    return
+                logger.info(f"🚀 Executing scheduled trade for schedule_id={schedule_id}")
+                execute_weekly_trade(schedule_id, security_id, amount, etf_name)
+
+            # Register the job with the scheduler
+            job_tag = f"trade_{schedule_item.cycle_id}_{schedule_item.week_number - 1}"
+            schedule.every().day.at(time_str).do(scheduled_trade).tag(job_tag)
+            logger.info(
+                f"✅ Scheduled job for schedule_id={schedule_item.schedule_id}, "
+                f"cycle_id={schedule_item.cycle_id}, week={schedule_item.week_number}, "
+                f"at {time_str} on {target_date}"
+            )
+
+        logger.info(f"✅ Successfully reloaded {len(pending_schedules)} pending schedules")
+        
+    except Exception as e:
+        logger.error(f"❌ Error reloading pending schedules: {e}", exc_info=True)
+    finally:
+        session.close()
+
 @app.errorhandler(400)
 def bad_request_error(error):
     logger.error(f"400 Bad Request: {error}")
@@ -546,4 +704,5 @@ def get_all_etf_details():
         session.close()
 
 if __name__ == "__main__":
+    reload_pending_schedules()
     socketio.run(app, debug=True)
