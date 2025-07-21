@@ -120,84 +120,8 @@ def reload_pending_schedules():
         logger.error(f"❌ Error reloading pending schedules: {e}", exc_info=True)
     finally:
         session.close()
-    """
-    Reloads all pending schedules from the database and registers them with the scheduler.
-    Marks past schedules as 'expired'.
-    """
-    session = Session()
-    try:
-        logger.info("🔄 Reloading pending schedules from database on server startup")
-        now = datetime.now(IST)
-        
-        # Query all pending schedules
-        pending_schedules = (
-            session.query(InvestmentSchedule)
-            .join(InvestmentCycle, InvestmentSchedule.cycle_id == InvestmentCycle.cycle_id)
-            .filter(
-                InvestmentSchedule.status == "pending",
-                InvestmentCycle.status == "active"  # Only load schedules for active cycles
-            )
-            .all()
-        )
-
-        if not pending_schedules:
-            logger.info("ℹ️ No pending schedules found in database")
-            return
-
-        for schedule_item in pending_schedules:
-            cycle = session.query(InvestmentCycle).filter_by(cycle_id=schedule_item.cycle_id).first()
-            etf = session.query(ETF).filter_by(etf_id=cycle.etf_id).first()
-            security_id = get_security_details(etf.etf_name)
-
-            if not security_id:
-                logger.error(f"⚠️ Could not fetch security details for ETF '{etf.etf_name}' for schedule_id={schedule_item.schedule_id}")
-                continue
-
-            # Combine execution date and time
-            execution_datetime = datetime.combine(
-                schedule_item.execution_date,
-                schedule_item.execution_time
-            ).replace(tzinfo=IST)
-
-            # Mark schedules that are in the past as expired
-            if execution_datetime <= now:
-                schedule_item.status = "expired"
-                session.commit()
-                logger.info(f"⏭️ Marked schedule_id={schedule_item.schedule_id} as expired (execution_datetime={execution_datetime})")
-                continue
-
-            # Schedule the trade
-            time_str = execution_datetime.strftime("%H:%M")
-            target_date = schedule_item.execution_date
-
-            def scheduled_trade(
-                schedule_id=schedule_item.schedule_id,
-                security_id=security_id,
-                amount=schedule_item.amount,
-                etf_name=etf.etf_name,
-                target_date=target_date
-            ):
-                now = datetime.now(IST)
-                if now.date() != target_date:
-                    return
-                logger.info(f"🚀 Executing scheduled trade for schedule_id={schedule_id}")
-                execute_weekly_trade(schedule_id, security_id, amount, etf_name)
-
-            # Register the job with the scheduler
-            job_tag = f"trade_{schedule_item.cycle_id}_{schedule_item.week_number - 1}"
-            schedule.every().day.at(time_str).do(scheduled_trade).tag(job_tag)
-            logger.info(
-                f"✅ Scheduled job for schedule_id={schedule_item.schedule_id}, "
-                f"cycle_id={schedule_item.cycle_id}, week={schedule_item.week_number}, "
-                f"at {time_str} on {target_date}"
-            )
-
-        logger.info(f"✅ Successfully reloaded {len(pending_schedules)} pending schedules")
-        
-    except Exception as e:
-        logger.error(f"❌ Error reloading pending schedules: {e}", exc_info=True)
-    finally:
-        session.close()
+ 
+   
 
 @app.errorhandler(400)
 def bad_request_error(error):
@@ -615,73 +539,73 @@ def get_all_etf_details():
     session = Session()
     try:
         etfs = session.query(ETF).all()
+
+        response = dhan.get_holdings()
+        logger.info(f"[Dhan Holdings API Response] => {response}")  # ✅ Log full response
+
+        holdings = response.get("data", []) if response and response.get("status") == "success" else []
+
         strategies = []
 
         for etf in etfs:
-            # Fetch security details including full name
             security_id, symbol_name = get_security_details(etf.etf_name)
             if not security_id:
                 logger.warning(f"Could not fetch security details for {etf.etf_name}")
-                symbol_name = etf.etf_name  # Fallback to etf_name if symbol_name not found
+                symbol_name = etf.etf_name
 
             cycles = session.query(InvestmentCycle).filter_by(etf_id=etf.etf_id).all()
-            total_invested = 0.0
             holding_qty = 0
             ltp = 0.0
             avg_cost_price = 0.0
             current_value = 0.0
             weeks = []
 
-            # Get holdings
-            holdings = []
-            try:
-                response = dhan.get_holdings()
-                if response and response.get("status") == "success" and "data" in response:
-                    holdings = response["data"]
-            except Exception:
-                pass
-
-            if security_id and holdings:
-                for holding in holdings:
-                    if int(holding.get("securityId")) == int(security_id):
-                        holding_qty = int(holding.get("availableQty", 0))
-                        ltp = float(holding.get("lastTradedPrice", 0.0))
-                        avg_cost_price = float(holding.get("avgCostPrice", 0.0))
-                        current_value = holding_qty * ltp
-                        break
-
-            if not ltp:
+            # Match holding with security_id
+            holding_details = next((h for h in holdings if int(h.get("securityId")) == int(security_id)), None)
+            if holding_details:
+                holding_qty = int(holding_details.get("availableQty", 0))
+                ltp = float(holding_details.get("lastTradedPrice", 0.0))
+                avg_cost_price = float(holding_details.get("avgCostPrice", 0.0))
+                current_value = holding_qty * ltp
+            else:
+                # fallback to live LTP if holding not found
                 ltp = get_ltp(security_id) or 0.0
                 current_value = holding_qty * ltp
 
-            # Build weeks
+            total_invested = avg_cost_price * holding_qty
+
             total_cycle_count = 0
             for cycle in cycles:
                 total_cycle_count += 1
-                schedules = session.query(InvestmentSchedule)\
-                    .filter_by(cycle_id=cycle.cycle_id)\
-                    .order_by(InvestmentSchedule.week_number).all()
-
+                schedules = (
+                    session.query(InvestmentSchedule)
+                    .filter_by(cycle_id=cycle.cycle_id)
+                    .order_by(InvestmentSchedule.week_number)
+                    .all()
+                )
                 for s in schedules:
-                    total_invested += float(s.amount) if s.status == "executed" else 0.0
                     weeks.append({
                         "id": f"{etf.etf_id}-{s.week_number}",
                         "weekNumber": s.week_number,
                         "amount": float(s.amount),
                         "date": s.execution_date.strftime("%d/%m/%Y"),
                         "ltp": round(ltp, 2),
-                        "qty": 0,  # Modify if qty per schedule is known
+                        "qty": 0,
                         "status": s.status
                     })
 
+            # ✅ Calculate profit percentage
             profit_percent = ((current_value - total_invested) / total_invested * 100) if total_invested > 0 else 0.0
 
             strategy = {
                 "id": str(etf.etf_id),
                 "name": etf.etf_name,
-                "full_name": symbol_name,  # Use SYMBOL_NAME from CSV
-                "totalAmount": sum([c.total_amount for c in cycles]),
+                "full_name": symbol_name,
+                "totalAmount": round(total_invested, 2),
                 "totalQty": holding_qty,
+                "avgCostPrice": round(avg_cost_price, 2),
+                "ltp": round(ltp, 2),
+                "currentValue": round(current_value, 2),
                 "profit": round(profit_percent, 2),
                 "status": cycles[0].status if cycles else "unknown",
                 "totalCount": total_cycle_count,
@@ -698,6 +622,8 @@ def get_all_etf_details():
         return jsonify({"status": "error", "message": f"Internal server error: {str(e)}"}), 500
     finally:
         session.close()
+
+
 if __name__ == "__main__":
     reload_pending_schedules()
     scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
