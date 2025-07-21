@@ -10,14 +10,37 @@ from dhanhq import dhanhq
 # Initialize Dhan client
 dhan = dhanhq(CLIENT_ID, ACCESS_TOKEN)
 
+# def get_security_details(symbol, exchange="NSE"):
+#     try:
+#         logger.info(f"🔍 Fetching SECURITY_ID for '{symbol}' on exchange '{exchange}'...")
+#         url = "https://images.dhan.co/api-data/api-scrip-master-detailed.csv"
+#         response = requests.get(url, verify=False)
+#         df = pd.read_csv(StringIO(response.text))
+#         df.columns = df.columns.str.strip()
+#         required_columns = ["UNDERLYING_SYMBOL", "SECURITY_ID", "EXCH_ID"]
+#         for col in required_columns:
+#             if col not in df.columns:
+#                 raise KeyError(f"Required column '{col}' not found.")
+#         df["UNDERLYING_SYMBOL"] = df["UNDERLYING_SYMBOL"].astype(str).str.strip()
+#         df["EXCH_ID"] = df["EXCH_ID"].astype(str).str.strip()
+#         match = df[(df["UNDERLYING_SYMBOL"] == symbol) & (df["EXCH_ID"] == exchange)]
+#         if not match.empty:
+#             security_id = match.iloc[0]["SECURITY_ID"]
+#             logger.info(f"✅ Found SECURITY_ID for {symbol} on {exchange}: {security_id}")
+#             return int(security_id)
+#         else:
+#             raise ValueError(f"❌ Symbol '{symbol}' not found in Dhan CSV for exchange {exchange}.")
+#     except Exception as e:
+#         logger.error(f"❌ Error in get_security_details: {e}", exc_info=True)
+#         return None
 def get_security_details(symbol, exchange="NSE"):
     try:
-        logger.info(f"🔍 Fetching SECURITY_ID for '{symbol}' on exchange '{exchange}'...")
+        logger.info(f"🔍 Fetching SECURITY_ID and SYMBOL_NAME for '{symbol}' on exchange '{exchange}'...")
         url = "https://images.dhan.co/api-data/api-scrip-master-detailed.csv"
         response = requests.get(url, verify=False)
         df = pd.read_csv(StringIO(response.text))
         df.columns = df.columns.str.strip()
-        required_columns = ["UNDERLYING_SYMBOL", "SECURITY_ID", "EXCH_ID"]
+        required_columns = ["UNDERLYING_SYMBOL", "SECURITY_ID", "EXCH_ID", "SYMBOL_NAME"]
         for col in required_columns:
             if col not in df.columns:
                 raise KeyError(f"Required column '{col}' not found.")
@@ -26,16 +49,20 @@ def get_security_details(symbol, exchange="NSE"):
         match = df[(df["UNDERLYING_SYMBOL"] == symbol) & (df["EXCH_ID"] == exchange)]
         if not match.empty:
             security_id = match.iloc[0]["SECURITY_ID"]
-            logger.info(f"✅ Found SECURITY_ID for {symbol} on {exchange}: {security_id}")
-            return int(security_id)
+            symbol_name = match.iloc[0]["SYMBOL_NAME"]
+            logger.info(f"✅ Found SECURITY_ID: {security_id} and SYMBOL_NAME: {symbol_name} for {symbol} on {exchange}")
+            return int(security_id), symbol_name
         else:
             raise ValueError(f"❌ Symbol '{symbol}' not found in Dhan CSV for exchange {exchange}.")
     except Exception as e:
         logger.error(f"❌ Error in get_security_details: {e}", exc_info=True)
-        return None
-
+        return None, None
 def get_ltp(security_id):
     try:
+        # Handle case where security_id is a tuple (e.g., from get_security_details)
+        if isinstance(security_id, tuple):
+            security_id = security_id[0]  # Take the first element (security_id)
+        security_id = int(security_id)
         url = "https://api.dhan.co/v2/marketfeed/ltp"
         headers = {
             "Accept": "application/json",
@@ -43,7 +70,6 @@ def get_ltp(security_id):
             "access-token": ACCESS_TOKEN,
             "client-id": CLIENT_ID
         }
-        security_id = int(security_id)
         payload = {
             "NSE_EQ": [security_id],
             "NSE_FNO": []

@@ -1,29 +1,37 @@
+
+
 from datetime import datetime, timedelta
 import schedule
 from config import logger, IST
 from models import Session, InvestmentSchedule, InvestmentCycle
 from utils import get_balance, get_ltp, save_execution_to_db, dhan
-from flask_socketio import SocketIO
+from socketio_instance import socketio
 
-socketio = SocketIO()
 
 def place_cnc_market_buy_order(schedule_id, security_id, withdrawable_balance, ltp, amount, etf_name):
     try:
+        if isinstance(security_id, tuple):
+            security_id = security_id[0]
         security_id = int(security_id)
+
         logger.info(f"📦 Attempting to place buy order with SECURITY_ID: {security_id}")
+
         if ltp <= 0:
             raise ValueError("LTP must be positive to calculate quantity.")
         if amount <= 0:
             raise ValueError("Amount must be positive.")
         if amount > withdrawable_balance:
             raise ValueError(f"Amount (₹{amount}) exceeds withdrawable balance (₹{withdrawable_balance}).")
+
         quantity = int(float(amount) / float(ltp))
         if quantity <= 0:
             raise ValueError("Amount is less than LTP, cannot execute trade.")
+
         logger.info(f"💵 Withdrawable Balance: ₹{withdrawable_balance}")
         logger.info(f"💰 Amount: ₹{amount}")
         logger.info(f"📊 LTP: ₹{ltp}")
         logger.info(f"🧮 Calculated Quantity: {quantity}")
+
         response = dhan.place_order(
             tag='',
             transaction_type=dhan.BUY,
@@ -41,9 +49,12 @@ def place_cnc_market_buy_order(schedule_id, security_id, withdrawable_balance, l
             bo_profit_value=0,
             bo_stop_loss_Value=0
         )
+
         session = Session()
         try:
             schedule = session.query(InvestmentSchedule).filter_by(schedule_id=schedule_id).one()
+            timestamp = datetime.now(IST)
+
             if response.get('status') == 'success':
                 order_id = response.get('data', {}).get('orderId', 'Unknown')
                 logger.info(f"✅ Buy order placed successfully for {quantity} units: Order ID {order_id}")
@@ -57,9 +68,9 @@ def place_cnc_market_buy_order(schedule_id, security_id, withdrawable_balance, l
                     'etf_name': etf_name
                 })
                 schedule.status = 'executed'
-                schedule.updated_at = datetime.now(IST)
+                schedule.updated_at = timestamp
                 session.commit()
-                save_execution_to_db(schedule_id, amount, ltp, quantity, datetime.now(IST), 'success')
+                save_execution_to_db(schedule_id, amount, ltp, quantity, timestamp, 'success')
                 return quantity, order_id, None
             else:
                 error_message = response.get('remarks', {}).get('error_message', 'Unknown error')
@@ -71,16 +82,18 @@ def place_cnc_market_buy_order(schedule_id, security_id, withdrawable_balance, l
                     'etf_name': etf_name
                 })
                 schedule.status = 'failed'
-                schedule.updated_at = datetime.now(IST)
+                schedule.updated_at = timestamp
                 session.commit()
-                save_execution_to_db(schedule_id, amount, ltp, quantity, datetime.now(IST), 'failed', error_message)
+                save_execution_to_db(schedule_id, amount, ltp, quantity, timestamp, 'failed', error_message)
                 return None, None, error_message
+
         except Exception as e:
             logger.error(f"❌ Error updating schedule: {e}", exc_info=True)
             session.rollback()
             return None, None, str(e)
         finally:
             session.close()
+
     except Exception as e:
         logger.error(f"❌ Exception while placing buy order: {e}", exc_info=True)
         socketio.emit('trade_update', {
@@ -89,18 +102,21 @@ def place_cnc_market_buy_order(schedule_id, security_id, withdrawable_balance, l
             'security_id': security_id,
             'etf_name': etf_name
         })
+
         session = Session()
         try:
             schedule = session.query(InvestmentSchedule).filter_by(schedule_id=schedule_id).one()
             schedule.status = 'failed'
             schedule.updated_at = datetime.now(IST)
             session.commit()
-            save_execution_to_db(schedule_id, amount, ltp, quantity, datetime.now(IST), 'failed', str(e))
+            save_execution_to_db(schedule_id, amount, ltp, 0, datetime.now(IST), 'failed', str(e))
         except:
             session.rollback()
         finally:
             session.close()
+
         return None, None, str(e)
+
 
 def execute_weekly_trade(schedule_id, security_id, amount, etf_name):
     logger.info(f"⏰ Executing scheduled trade: schedule_id={schedule_id}, security_id={security_id}, amount={amount}, etf_name={etf_name} at {datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S')}")

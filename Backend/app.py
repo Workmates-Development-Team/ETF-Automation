@@ -11,11 +11,12 @@ from sqlalchemy import func
 from config import logger, IST
 from models import Session, ETF, InvestmentCycle, InvestmentSchedule
 from utils import get_security_details, get_ltp, dhan, get_balance
+from socketio_instance import socketio
 from trade import place_cnc_market_buy_order, execute_weekly_trade, schedule_weekly_trades, unschedule_jobs_for_cycle
 
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*"}, r"/socket.io/*": {"origins": "*"}})
-socketio = SocketIO(app, cors_allowed_origins="*")
+socketio.init_app(app)
 
 # Custom JSON Provider to handle NumPy types
 class CustomJSONProvider(DefaultJSONProvider):
@@ -36,9 +37,9 @@ def run_scheduler():
         schedule.run_pending()
         time.sleep(1)
 
-# Start the scheduler in a separate thread
-scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
-scheduler_thread.start()
+#  Start the scheduler in a separate thread
+# scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
+# scheduler_thread.start()
 
 def reload_pending_schedules():
     """
@@ -448,7 +449,7 @@ def get_etf_details(etf_name):
         holding_qty = 0
         current_value = 0.0
         avg_cost_price = 0.0
-        security_id = get_security_details(etf.etf_name)
+        security_id, symbol_name = get_security_details(etf.etf_name)
         
         if not security_id:
             logger.error(f"Could not fetch security details for ETF '{etf_name}'")
@@ -483,6 +484,7 @@ def get_etf_details(etf_name):
             "etf": {
                 "etf_id": etf.etf_id,
                 "etf_name": etf.etf_name,
+                "full_name": symbol_name,  # Added full name
                 "description": etf.description,
                 "created_at": etf.created_at.isoformat(),
                 "investment_cycles": cycle_list,
@@ -511,7 +513,6 @@ def get_etf_details(etf_name):
         return jsonify({"status": "error", "message": f"Internal server error: {str(e)}"}), 500
     finally:
         session.close()
-
 @app.route("/api/schedule_etf", methods=["POST"])
 def api_schedule_etf():
     session = Session()
@@ -606,45 +607,32 @@ def api_schedule_etf():
     finally:
         session.close()
 
+
+from datetime import datetime
+
 @app.route("/api/all_etf_details", methods=["GET"])
 def get_all_etf_details():
     session = Session()
     try:
         etfs = session.query(ETF).all()
-        all_etf_data = []
+        strategies = []
 
         for etf in etfs:
+            # Fetch security details including full name
+            security_id, symbol_name = get_security_details(etf.etf_name)
+            if not security_id:
+                logger.warning(f"Could not fetch security details for {etf.etf_name}")
+                symbol_name = etf.etf_name  # Fallback to etf_name if symbol_name not found
+
             cycles = session.query(InvestmentCycle).filter_by(etf_id=etf.etf_id).all()
-            cycle_list = []
             total_invested = 0.0
+            holding_qty = 0
+            ltp = 0.0
+            avg_cost_price = 0.0
+            current_value = 0.0
+            weeks = []
 
-            for cycle in cycles:
-                schedules = session.query(InvestmentSchedule).filter_by(cycle_id=cycle.cycle_id).order_by(InvestmentSchedule.week_number).all()
-                schedule_list = []
-                for s in schedules:
-                    schedule_list.append({
-                        "schedule_id": s.schedule_id,
-                        "week_number": s.week_number,
-                        "execution_date": s.execution_date.isoformat(),
-                        "execution_time": s.execution_time.strftime("%H:%M:%S"),
-                        "amount": float(s.amount),
-                        "status": s.status,
-                        "created_at": s.created_at.isoformat(),
-                        "updated_at": s.updated_at.isoformat()
-                    })
-                    if s.status == "executed":
-                        total_invested += float(s.amount)
-
-                cycle_list.append({
-                    "cycle_id": cycle.cycle_id,
-                    "total_amount": float(cycle.total_amount),
-                    "start_date": cycle.start_date.isoformat(),
-                    "status": cycle.status,
-                    "created_at": cycle.created_at.isoformat(),
-                    "updated_at": cycle.updated_at.isoformat(),
-                    "schedules": schedule_list
-                })
-
+            # Get holdings
             holdings = []
             try:
                 response = dhan.get_holdings()
@@ -653,56 +641,65 @@ def get_all_etf_details():
             except Exception:
                 pass
 
-            holding_qty = 0
-            current_value = 0.0
-            avg_cost_price = 0.0
-            security_id = get_security_details(etf.etf_name)
-            ltp = None
-            holding_details = None
             if security_id and holdings:
                 for holding in holdings:
                     if int(holding.get("securityId")) == int(security_id):
                         holding_qty = int(holding.get("availableQty", 0))
                         ltp = float(holding.get("lastTradedPrice", 0.0))
                         avg_cost_price = float(holding.get("avgCostPrice", 0.0))
-                        holding_details = holding
                         current_value = holding_qty * ltp
                         break
 
-            if ltp is None or ltp == 0.0:
-                ltp = get_ltp(security_id)
-                if ltp is None:
-                    ltp = 0.0
+            if not ltp:
+                ltp = get_ltp(security_id) or 0.0
                 current_value = holding_qty * ltp
+
+            # Build weeks
+            total_cycle_count = 0
+            for cycle in cycles:
+                total_cycle_count += 1
+                schedules = session.query(InvestmentSchedule)\
+                    .filter_by(cycle_id=cycle.cycle_id)\
+                    .order_by(InvestmentSchedule.week_number).all()
+
+                for s in schedules:
+                    total_invested += float(s.amount) if s.status == "executed" else 0.0
+                    weeks.append({
+                        "id": f"{etf.etf_id}-{s.week_number}",
+                        "weekNumber": s.week_number,
+                        "amount": float(s.amount),
+                        "date": s.execution_date.strftime("%d/%m/%Y"),
+                        "ltp": round(ltp, 2),
+                        "qty": 0,  # Modify if qty per schedule is known
+                        "status": s.status
+                    })
 
             profit_percent = ((current_value - total_invested) / total_invested * 100) if total_invested > 0 else 0.0
 
-            all_etf_data.append({
-                "etf_id": etf.etf_id,
-                "etf_name": etf.etf_name,
-                "description": etf.description,
-                "created_at": etf.created_at.isoformat(),
-                "investment_cycles": cycle_list,
-                "total_invested": round(float(total_invested), 2),
-                "current_value": round(float(current_value), 2),
-                "profit_percent": round(float(profit_percent), 2),
-                "holding_quantity": holding_qty,
-                "avg_cost_price": round(float(avg_cost_price), 2),
-                "ltp": round(float(ltp), 2) if ltp else None,
-                "holding_details": holding_details
-            })
+            strategy = {
+                "id": str(etf.etf_id),
+                "name": etf.etf_name,
+                "full_name": symbol_name,  # Use SYMBOL_NAME from CSV
+                "totalAmount": sum([c.total_amount for c in cycles]),
+                "totalQty": holding_qty,
+                "profit": round(profit_percent, 2),
+                "status": cycles[0].status if cycles else "unknown",
+                "totalCount": total_cycle_count,
+                "startDate": cycles[0].start_date.strftime("%d/%m/%Y") if cycles else None,
+                "weeks": weeks
+            }
 
-        return jsonify({
-            "status": "success",
-            "etfs": all_etf_data
-        })
+            strategies.append(strategy)
+
+        return jsonify(strategies)
 
     except Exception as e:
         logger.error(f"Error in /api/all_etf_details: {str(e)}", exc_info=True)
         return jsonify({"status": "error", "message": f"Internal server error: {str(e)}"}), 500
     finally:
         session.close()
-
 if __name__ == "__main__":
     reload_pending_schedules()
+    scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
+    scheduler_thread.start()
     socketio.run(app, debug=True)
