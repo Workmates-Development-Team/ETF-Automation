@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { X, Plus, TrendingUp, CalendarIcon } from 'lucide-react';
+import { X, Plus, TrendingUp, CalendarIcon, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,19 +12,28 @@ import { cn } from '@/lib/utils';
 interface AddCycleFormProps {
   onSubmit: (name: string, amount: number, startDate: Date) => void;
   onCancel: () => void;
+  isLoading?: boolean;
 }
 
-export const AddCycleForm: React.FC<AddCycleFormProps> = ({ onSubmit, onCancel }) => {
+export const AddCycleForm: React.FC<AddCycleFormProps> = ({ onSubmit, onCancel, isLoading = false }) => {
   const [name, setName] = useState('');
   const [amount, setAmount] = useState<number>(0);
   const [startDate, setStartDate] = useState<Date>(new Date());
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (name.trim() && amount > 0 && startDate) {
-      onSubmit(name.trim(), amount, startDate);
+    if (name.trim() && amount > 0 && startDate && !isSubmitting && !isLoading) {
+      setIsSubmitting(true);
+      try {
+        await onSubmit(name.trim(), amount, startDate);
+      } finally {
+        setIsSubmitting(false);
+      }
     }
   };
+
+  const isFormLoading = isLoading || isSubmitting;
 
   const weeklyAmount = amount / 5;
 
@@ -59,7 +68,8 @@ export const AddCycleForm: React.FC<AddCycleFormProps> = ({ onSubmit, onCancel }
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g., ABC"
-            className="bg-background border-primary/30 text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-primary/20"
+            disabled={isFormLoading}
+            className="bg-background border-primary/30 text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-primary/20 disabled:opacity-50"
             required
           />
         </div>
@@ -75,7 +85,8 @@ export const AddCycleForm: React.FC<AddCycleFormProps> = ({ onSubmit, onCancel }
             value={amount || ''}
             onChange={(e) => setAmount(Number(e.target.value))}
             placeholder="e.g., 1000000"
-            className="bg-background border-primary/30 text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-primary/20"
+            disabled={isFormLoading}
+            className="bg-background border-primary/30 text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-primary/20 disabled:opacity-50"
             required
             min="1"
           />
@@ -90,8 +101,9 @@ export const AddCycleForm: React.FC<AddCycleFormProps> = ({ onSubmit, onCancel }
             <PopoverTrigger asChild>
               <Button
                 variant="outline"
+                disabled={isFormLoading}
                 className={cn(
-                  "w-full justify-start text-left font-normal bg-background border-primary/30 hover:bg-primary/5",
+                  "w-full justify-start text-left font-normal bg-background border-primary/30 hover:bg-primary/5 disabled:opacity-50",
                   !startDate && "text-muted-foreground"
                 )}
               >
@@ -137,16 +149,24 @@ export const AddCycleForm: React.FC<AddCycleFormProps> = ({ onSubmit, onCancel }
             type="button"
             onClick={onCancel}
             variant="outline"
-            className="flex-1 border-border text-foreground hover:bg-muted/50"
+            disabled={isFormLoading}
+            className="flex-1 border-border text-foreground hover:bg-muted/50 disabled:opacity-50"
           >
             Cancel
           </Button>
           <Button
             type="submit"
-            disabled={!name.trim() || amount <= 0 || !startDate}
+            disabled={!name.trim() || amount <= 0 || !startDate || isFormLoading}
             className="flex-1 bg-gradient-to-r from-primary to-purple hover:from-primary/90 hover:to-purple/90 text-white font-semibold shadow-lg disabled:opacity-50 border-0"
           >
-            Create Cycle
+            {isFormLoading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Creating...
+              </>
+            ) : (
+              'Create Cycle'
+            )}
           </Button>
         </div>
       </form>
