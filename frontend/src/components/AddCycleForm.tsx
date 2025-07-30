@@ -33,9 +33,7 @@ export const AddCycleForm: React.FC<AddCycleFormProps> = ({ onSubmit, onCancel }
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 bg-gradient-to-r from-primary to-purple rounded-lg flex items-center justify-center shadow-lg">
-            <Plus className="w-5 h-5 text-white" />
-          </div>
+         
           <div>
             <h2 className="text-xl font-bold bg-gradient-to-r from-primary to-purple bg-clip-text text-transparent">Add New Cycle</h2>
             <p className="text-muted-foreground text-sm">Create a new trading strategy</p>
@@ -53,14 +51,14 @@ export const AddCycleForm: React.FC<AddCycleFormProps> = ({ onSubmit, onCancel }
         {/* Strategy Name */}
         <div className="space-y-2">
           <Label htmlFor="name" className="text-foreground font-medium">
-            Strategy Name
+            ETF Name
           </Label>
           <Input
             id="name"
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="e.g., ABC Strategy"
+            placeholder="e.g., ABC"
             className="bg-background border-primary/30 text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-primary/20"
             required
           />

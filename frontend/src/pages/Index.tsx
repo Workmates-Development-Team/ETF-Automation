@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { CycleCard } from '@/components/CycleCard';
 import { AddCycleForm } from '@/components/AddCycleForm';
+import Header from '@/components/Header';
 
 interface Week {
   id: string;
@@ -16,6 +17,7 @@ interface Week {
 }
 
 interface Cycle {
+  updates: any;
   id: string;
   name: string;
   totalAmount: number;
@@ -38,7 +40,7 @@ const Index = () => {
   async function getInitialCycles() {
     setLoading(true);
     try {
-      const response = await fetch('http://127.0.0.1:5000/api/all_etf_details');
+      const response = await fetch('https://etf-backend.codecatalystworks.com/api/all_etf_details');
       if (!response.ok) {
         throw new Error('Failed to fetch ETF details');
       }
@@ -80,12 +82,13 @@ const Index = () => {
         ltp: 93.00,
         qty: 0,
         status: index === 0 ? 'active' : 'inactive' as 'executed' | 'active' | 'inactive'
-      }))
+      })),
+      updates: undefined
     };
 
     // Call backend API to schedule ETF
     try {
-      await fetch('http://127.0.0.1:5000/api/schedule_etf', {
+      await fetch('https://etf-backend.codecatalystworks.com/api/schedule_etf', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -108,7 +111,7 @@ const Index = () => {
     // Call backend API to update the cycle
     setLoading(true);
     try {
-      await fetch('http://127.0.0.1:5000/api/update_schedule', {
+      await fetch('https://etf-backend.codecatalystworks.com/api/update_schedule', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -140,8 +143,8 @@ const Index = () => {
 
     const isPausing = cycle.status === 'active';
     const endpoint = isPausing
-      ? 'http://127.0.0.1:5000/api/pause_cycle'
-      : 'http://127.0.0.1:5000/api/resume_cycle';
+      ? 'https://etf-backend.codecatalystworks.com/api/pause_cycle'
+      : 'https://etf-backend.codecatalystworks.com/api/resume_cycle';
 
     try {
       await fetch(endpoint, {
@@ -187,14 +190,15 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-background">
+      <Header />
       <div className="relative z-10 p-6">
         {/* Header */}
         <div className="mb-8">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h1 className="text-4xl font-bold bg-gradient-to-r from-primary via-purple to-pink bg-clip-text text-transparent mb-2">
+              {/* <h1 className="text-4xl font-bold bg-gradient-to-r from-primary via-purple to-pink bg-clip-text text-transparent mb-2">
                 ETF Strategy Management
-              </h1>
+              </h1> */}
               <p className="text-muted-foreground text-lg">Advanced trading cycle automation</p>
             </div>
             <div className="flex items-center space-x-4">
