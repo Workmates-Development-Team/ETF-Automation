@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Play, Pause, TrendingUp, Hash, DollarSign } from 'lucide-react';
+import { Play, Pause, TrendingUp, Hash, DollarSign, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { WeekCard } from '@/components/WeekCard';
 
@@ -30,12 +30,14 @@ interface CycleCardProps {
   cycle: Cycle;
   onUpdate: (cycle: Cycle) => void;
   onToggleStatus: (cycleId: string) => void;
+  isLoading?: boolean;
 }
 
 export const CycleCard: React.FC<CycleCardProps> = ({ 
   cycle, 
   onUpdate, 
-  onToggleStatus 
+  onToggleStatus,
+  isLoading = false
 }) => {
   const updateWeek = (weekId: string, updates: Partial<Week>) => {
     const updatedWeeks = cycle.weeks.map(week =>
@@ -99,13 +101,19 @@ export const CycleCard: React.FC<CycleCardProps> = ({
           {cycle.status !== 'completed' && (
             <Button
               onClick={() => onToggleStatus(cycle.id)}
+              disabled={isLoading}
               className={`${
                 cycle.status === 'active'
                   ? 'bg-gradient-to-r from-warning to-orange hover:from-warning/90 hover:to-orange/90 text-warning-foreground'
                   : 'bg-gradient-to-r from-success to-teal hover:from-success/90 hover:to-teal/90 text-success-foreground'
-              } font-semibold px-4 py-2 rounded-lg shadow-lg border-0`}
+              } font-semibold px-4 py-2 rounded-lg shadow-lg border-0 disabled:opacity-50`}
             >
-              {cycle.status === 'active' ? (
+              {isLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  {cycle.status === 'active' ? 'Pausing...' : 'Resuming...'}
+                </>
+              ) : cycle.status === 'active' ? (
                 <>
                   <Pause className="w-4 h-4 mr-2" />
                   Pause

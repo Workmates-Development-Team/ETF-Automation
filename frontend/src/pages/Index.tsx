@@ -5,6 +5,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { CycleCard } from '@/components/CycleCard';
 import { AddCycleForm } from '@/components/AddCycleForm';
 import Header from '@/components/Header';
+import { CycleApiService } from '@/services/cycleApi';
 
 interface Week {
   id: string;
@@ -36,16 +37,18 @@ const Index = () => {
 
   
   const [loading, setLoading] = useState(false);
+  const [toggleLoadingCycles, setToggleLoadingCycles] = useState<Set<string>>(new Set());
 
   async function getInitialCycles() {
     setLoading(true);
     try {
-      const response = await fetch('https://etf-backend.codecatalystworks.com/api/all_etf_details');
-      if (!response.ok) {
-        throw new Error('Failed to fetch ETF details');
+      const result = await CycleApiService.getAllEtfDetails();
+      if (result.success) {
+        return result.data;
+      } else {
+        console.error('Failed to fetch ETF details:', result.message);
+        return null;
       }
-      const data = await response.json();
-      return data;
     } catch (error) {
       console.error('Error fetching ETF details:', error);
       return null;
@@ -88,17 +91,19 @@ const Index = () => {
 
     // Call backend API to schedule ETF
     try {
-      await fetch('https://etf-backend.codecatalystworks.com/api/schedule_etf', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          total_amount: amount,
-          etf_name: name,
-          start_date: startDate.toISOString().slice(0, 10)
-        })
-      });
+      const result = await CycleApiService.scheduleEtf(
+        amount,
+        name,
+        startDate.toISOString().slice(0, 10)
+      );
+      
+      if (!result.success) {
+        console.error('Failed to schedule ETF:', result.message);
+        return; // Don't add to local state if API call failed
+      }
     } catch (error) {
       console.error('Failed to schedule ETF:', error);
+      return;
     }
 
     setCycles(prev => [...prev, newCycle]);
@@ -111,30 +116,28 @@ const Index = () => {
     // Call backend API to update the cycle
     setLoading(true);
     try {
-      await fetch('https://etf-backend.codecatalystworks.com/api/update_schedule', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          schedule_id: updatedCycle.id,
-          amount: updatedCycle.updates.amount,
-          execution_date: updatedCycle.updates.date.split('/').reverse().join('-'), // Convert DD/MM/YYYY to YYYY-MM-DD
-          execution_time: "15:36:00" 
-        })
-      });
+      const result = await CycleApiService.updateSchedule(
+        updatedCycle.id,
+        updatedCycle.updates.amount,
+        updatedCycle.updates.date.split('/').reverse().join('-'), // Convert DD/MM/YYYY to YYYY-MM-DD
+        "15:36:00"
+      );
+      
+      if (!result.success) {
+        console.error('Failed to update schedule:', result.message);
+        return;
+      }
     } catch (error) {
       console.error('Failed to update schedule:', error);
     } finally {
-      setLoading(false);}
+      setLoading(false);
+    }
 
-    // setCycles(prev => prev.map(cycle => 
-    //   cycle.id === updatedCycle.id ? updatedCycle : cycle
-    // ));
-
-     getInitialCycles().then(data => {
-      if (data && Array.isArray(data)) {
+    // Refresh cycles from backend
+    const data = await getInitialCycles();
+    if (data && Array.isArray(data)) {
       setCycles(data);
-      }
-    });
+    }
   };
   
   const toggleCycleStatus = async (cycleId: string) => {
@@ -142,24 +145,36 @@ const Index = () => {
     if (!cycle) return;
 
     const isPausing = cycle.status === 'active';
-    const endpoint = isPausing
-      ? 'https://etf-backend.codecatalystworks.com/api/pause_cycle'
-      : 'https://etf-backend.codecatalystworks.com/api/resume_cycle';
-
+    
+    // Add cycle to loading set
+    setToggleLoadingCycles(prev => new Set(prev).add(cycleId));
+    
     try {
-      await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cycle_id: cycleId }),
-      });
-      // Optionally, refresh from backend:
-      getInitialCycles().then(data => {
-        if (data && Array.isArray(data)) {
-          setCycles(data);
-        }
-      });
+      const result = isPausing 
+        ? await CycleApiService.pauseCycle(parseInt(cycleId))
+        : await CycleApiService.resumeCycle(parseInt(cycleId));
+
+      if (!result.success) {
+        console.error(`Failed to ${isPausing ? 'pause' : 'resume'} cycle:`, result.message);
+        // You might want to show a toast notification here
+        return;
+      }
+
+      // Refresh cycles from backend to get updated status
+      const data = await getInitialCycles();
+      if (data && Array.isArray(data)) {
+        setCycles(data);
+      }
     } catch (error) {
-      console.error('Failed to toggle cycle status:', error);
+      console.error(`Failed to ${isPausing ? 'pause' : 'resume'} cycle:`, error);
+      // You might want to show a toast notification here
+    } finally {
+      // Remove cycle from loading set
+      setToggleLoadingCycles(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(cycleId);
+        return newSet;
+      });
     }
   };
 
@@ -280,6 +295,7 @@ const Index = () => {
                     cycle={cycle}
                     onUpdate={updateCycle}
                     onToggleStatus={toggleCycleStatus}
+                    isLoading={toggleLoadingCycles.has(cycle.id)}
                   />
                 ))}
               </div>
@@ -293,6 +309,7 @@ const Index = () => {
                     cycle={cycle}
                     onUpdate={updateCycle}
                     onToggleStatus={toggleCycleStatus}
+                    isLoading={toggleLoadingCycles.has(cycle.id)}
                   />
                 ))}
               </div>
@@ -306,6 +323,7 @@ const Index = () => {
                     cycle={cycle}
                     onUpdate={updateCycle}
                     onToggleStatus={toggleCycleStatus}
+                    isLoading={toggleLoadingCycles.has(cycle.id)}
                   />
                 ))}
               </div>
@@ -319,6 +337,7 @@ const Index = () => {
                     cycle={cycle}
                     onUpdate={updateCycle}
                     onToggleStatus={toggleCycleStatus}
+                    isLoading={toggleLoadingCycles.has(cycle.id)}
                   />
                 ))}
               </div>
