@@ -572,6 +572,7 @@ def get_all_etf_details():
                 for s in schedules:
                     weeks.append({
                         "id": f"{etf.etf_id}-{s.week_number}",
+                        "schedule_id": s.schedule_id,
                         "weekNumber": s.week_number,
                         "amount": float(s.amount),
                         "date": s.execution_date.strftime("%d/%m/%Y"),
