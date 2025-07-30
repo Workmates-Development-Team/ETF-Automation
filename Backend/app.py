@@ -593,7 +593,7 @@ def get_all_etf_details():
                 "ltp": round(ltp, 2),
                 "currentValue": round(current_value, 2),
                 "profit": round(profit_percent, 2),
-                "status": cycles[0].status if cycles else "unknown",
+                "status": cycle.status,
                 "totalCount": total_cycle_count,
                 "startDate": cycles[0].start_date.strftime("%d/%m/%Y") if cycles else None,
                 "weeks": weeks
