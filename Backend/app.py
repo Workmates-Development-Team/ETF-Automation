@@ -571,7 +571,7 @@ def get_all_etf_details():
                 )
                 for s in schedules:
                     weeks.append({
-                        "id": f"{etf.etf_id}-{s.week_number}",
+                        "id": f"{cycle.cycle_id}-{s.week_number}",
                         "schedule_id": s.schedule_id,
                         "weekNumber": s.week_number,
                         "amount": float(s.amount),
@@ -584,7 +584,7 @@ def get_all_etf_details():
             profit_percent = ((current_value - total_invested) / total_invested * 100) if total_invested > 0 else 0.0
 
             strategy = {
-                "id": str(etf.etf_id),
+                "id": str(cycle.cycle_id),
                 "name": etf.etf_name,
                 "full_name": symbol_name,
                 "totalAmount": round(total_invested, 2),
