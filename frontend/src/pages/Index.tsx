@@ -57,6 +57,20 @@ const Index = () => {
     }
   }
 
+  // Separate function for refreshing data without global loading
+  async function refreshCycles() {
+    try {
+      const result = await CycleApiService.getAllEtfDetails();
+      if (result.success && Array.isArray(result.data)) {
+        setCycles(result.data);
+      } else {
+        console.error('Failed to refresh ETF details:', result.message);
+      }
+    } catch (error) {
+      console.error('Error refreshing ETF details:', error);
+    }
+  }
+
   useEffect(() => {
     getInitialCycles().then(data => {
       if (data && Array.isArray(data)) {
@@ -114,7 +128,6 @@ const Index = () => {
   const updateCycle = async (updatedCycle: Cycle) => {
     console.log(updatedCycle)
     // Call backend API to update the cycle
-    setLoading(true);
     try {
       const result = await CycleApiService.updateSchedule(
         updatedCycle.id,
@@ -127,16 +140,11 @@ const Index = () => {
         console.error('Failed to update schedule:', result.message);
         return;
       }
+
+      // Refresh cycles from backend without global loading
+      await refreshCycles();
     } catch (error) {
       console.error('Failed to update schedule:', error);
-    } finally {
-      setLoading(false);
-    }
-
-    // Refresh cycles from backend
-    const data = await getInitialCycles();
-    if (data && Array.isArray(data)) {
-      setCycles(data);
     }
   };
   
@@ -160,11 +168,8 @@ const Index = () => {
         return;
       }
 
-      // Refresh cycles from backend to get updated status
-      const data = await getInitialCycles();
-      if (data && Array.isArray(data)) {
-        setCycles(data);
-      }
+      // Refresh cycles from backend without global loading
+      await refreshCycles();
     } catch (error) {
       console.error(`Failed to ${isPausing ? 'pause' : 'resume'} cycle:`, error);
       // You might want to show a toast notification here
