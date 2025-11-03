@@ -81,29 +81,6 @@ const Index = () => {
 
   const [showAddForm, setShowAddForm] = useState(false);
   const addNewCycle = async (name: string, amount: number, startDate: Date) => {
-    const weekAmount = amount / 5;
-    const newCycle: Cycle = {
-      id: Date.now().toString(),
-      name,
-      totalAmount: amount,
-      totalQty: 0,
-      profit: 0.00,
-      status: 'active',
-      totalCount: 0,
-      startDate: startDate.toLocaleDateString('en-GB'),
-      weeks: Array.from({ length: 5 }, (_, index) => ({
-        id: `${Date.now()}-${index + 1}`,
-        weekNumber: index + 1,
-        amount: weekAmount,
-        date: new Date(startDate.getTime() + (index * 7 * 24 * 60 * 60 * 1000)).toLocaleDateString('en-GB'),
-        ltp: 93.00,
-        qty: 0,
-        status: index === 0 ? 'active' : 'inactive' as 'executed' | 'active' | 'inactive'
-      })),
-      updates: undefined
-    };
-
-    // Call backend API to schedule ETF
     try {
       const result = await CycleApiService.scheduleEtf(
         amount,
@@ -112,16 +89,39 @@ const Index = () => {
       );
       
       if (!result.success) {
-        console.error('Failed to schedule ETF:', result.message);
-        return; // Don't add to local state if API call failed
+        // Error toast is already shown by the API service
+        return;
       }
-    } catch (error) {
-      console.error('Failed to schedule ETF:', error);
-      return;
-    }
 
-    setCycles(prev => [...prev, newCycle]);
-    setShowAddForm(false);
+      // Only add to local state if API call succeeded
+      const weekAmount = amount / 5;
+      const newCycle: Cycle = {
+        id: Date.now().toString(),
+        name,
+        totalAmount: amount,
+        totalQty: 0,
+        profit: 0.00,
+        status: 'active',
+        totalCount: 0,
+        startDate: startDate.toLocaleDateString('en-GB'),
+        weeks: Array.from({ length: 5 }, (_, index) => ({
+          id: `${Date.now()}-${index + 1}`,
+          weekNumber: index + 1,
+          amount: weekAmount,
+          date: new Date(startDate.getTime() + (index * 7 * 24 * 60 * 60 * 1000)).toLocaleDateString('en-GB'),
+          ltp: 93.00,
+          qty: 0,
+          status: index === 0 ? 'active' : 'inactive' as 'executed' | 'active' | 'inactive'
+        })),
+        updates: undefined
+      };
+
+      setCycles(prev => [...prev, newCycle]);
+      setShowAddForm(false);
+    } catch (error) {
+      // This catch block handles any unexpected errors
+      console.error('Failed to schedule ETF:', error);
+    }
   };
 
 

@@ -1,3 +1,5 @@
+import { showApiError } from '@/lib/toast-utils';
+
 const BASE_URL = 'https://etf-backend.codecatalystworks.com/api';
 
 export interface CycleApiResponse {
@@ -5,6 +7,27 @@ export interface CycleApiResponse {
   message?: string;
   data?: any;
 }
+
+interface ApiErrorResponse {
+  message: string;
+  status: "error";
+}
+
+const handleApiError = async (response: Response): Promise<string> => {
+  console.log("Handling API error, status:", response.status); // Debug log
+  try {
+    const errorData: ApiErrorResponse = await response.json();
+    console.log("Error data:", errorData); // Debug log
+    const errorMessage = errorData.message || `HTTP error! status: ${response.status}`;
+    showApiError(errorMessage);
+    return errorMessage;
+  } catch (parseError) {
+    console.log("Failed to parse error response:", parseError); // Debug log
+    const errorMessage = `HTTP error! status: ${response.status}`;
+    showApiError(errorMessage);
+    return errorMessage;
+  }
+};
 
 export class CycleApiService {
   /**
@@ -22,20 +45,16 @@ export class CycleApiService {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const errorMessage = await handleApiError(response);
+        return { success: false, message: errorMessage };
       }
 
       const data = await response.json();
-      return {
-        success: true,
-        data,
-      };
+      return { success: true, data };
     } catch (error) {
-      console.error('Error pausing cycle:', error);
-      return {
-        success: false,
-        message: error instanceof Error ? error.message : 'Failed to pause cycle',
-      };
+      const errorMessage = error instanceof Error ? error.message : 'Failed to pause cycle';
+      showApiError(errorMessage);
+      return { success: false, message: errorMessage };
     }
   }
 
@@ -54,20 +73,16 @@ export class CycleApiService {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const errorMessage = await handleApiError(response);
+        return { success: false, message: errorMessage };
       }
 
       const data = await response.json();
-      return {
-        success: true,
-        data,
-      };
+      return { success: true, data };
     } catch (error) {
-      console.error('Error resuming cycle:', error);
-      return {
-        success: false,
-        message: error instanceof Error ? error.message : 'Failed to resume cycle',
-      };
+      const errorMessage = error instanceof Error ? error.message : 'Failed to resume cycle';
+      showApiError(errorMessage);
+      return { success: false, message: errorMessage };
     }
   }
 
@@ -79,20 +94,16 @@ export class CycleApiService {
       const response = await fetch(`${BASE_URL}/all_etf_details`);
       
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const errorMessage = await handleApiError(response);
+        return { success: false, message: errorMessage };
       }
 
       const data = await response.json();
-      return {
-        success: true,
-        data,
-      };
+      return { success: true, data };
     } catch (error) {
-      console.error('Error fetching ETF details:', error);
-      return {
-        success: false,
-        message: error instanceof Error ? error.message : 'Failed to fetch ETF details',
-      };
+      const errorMessage = error instanceof Error ? error.message : 'Failed to fetch ETF details';
+      showApiError(errorMessage);
+      return { success: false, message: errorMessage };
     }
   }
 
@@ -114,20 +125,16 @@ export class CycleApiService {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const errorMessage = await handleApiError(response);
+        return { success: false, message: errorMessage };
       }
 
       const data = await response.json();
-      return {
-        success: true,
-        data,
-      };
+      return { success: true, data };
     } catch (error) {
-      console.error('Error scheduling ETF:', error);
-      return {
-        success: false,
-        message: error instanceof Error ? error.message : 'Failed to schedule ETF',
-      };
+      const errorMessage = error instanceof Error ? error.message : 'Failed to schedule ETF';
+      showApiError(errorMessage);
+      return { success: false, message: errorMessage };
     }
   }
 
@@ -150,20 +157,16 @@ export class CycleApiService {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const errorMessage = await handleApiError(response);
+        return { success: false, message: errorMessage };
       }
 
       const data = await response.json();
-      return {
-        success: true,
-        data,
-      };
+      return { success: true, data };
     } catch (error) {
-      console.error('Error updating schedule:', error);
-      return {
-        success: false,
-        message: error instanceof Error ? error.message : 'Failed to update schedule',
-      };
+      const errorMessage = error instanceof Error ? error.message : 'Failed to update schedule';
+      showApiError(errorMessage);
+      return { success: false, message: errorMessage };
     }
   }
 }
