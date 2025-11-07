@@ -561,8 +561,11 @@ def get_all_etf_details():
             total_invested = avg_cost_price * holding_qty
 
             total_cycle_count = 0
+            latest_cycle = None
+            
             for cycle in cycles:
                 total_cycle_count += 1
+                latest_cycle = cycle  # Keep track of the latest cycle
                 schedules = (
                     session.query(InvestmentSchedule)
                     .filter_by(cycle_id=cycle.cycle_id)
@@ -584,7 +587,7 @@ def get_all_etf_details():
             profit_percent = ((current_value - total_invested) / total_invested * 100) if total_invested > 0 else 0.0
 
             strategy = {
-                "id": str(cycle.cycle_id),
+                "id": str(latest_cycle.cycle_id) if latest_cycle else "0",
                 "name": etf.etf_name,
                 "full_name": symbol_name,
                 "totalAmount": round(total_invested, 2),
@@ -593,7 +596,7 @@ def get_all_etf_details():
                 "ltp": round(ltp, 2),
                 "currentValue": round(current_value, 2),
                 "profit": round(profit_percent, 2),
-                "status": cycle.status,
+                "status": latest_cycle.status if latest_cycle else "inactive",
                 "totalCount": total_cycle_count,
                 "startDate": cycles[0].start_date.strftime("%d/%m/%Y") if cycles else None,
                 "weeks": weeks
